@@ -1,0 +1,31 @@
+{
+  "name": "mux-crawler",
+  "version": "2.0.0",
+  "description": "Playwright-based Mux dashboard metrics extractor",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug",
+    "test:ui": "playwright test --ui",
+    "extract": "playwright test --project=extraction",
+    "db:setup": "psql -f schema.sql"
+  },
+  "keywords": ["playwright", "mux", "analytics", "scraper"],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@playwright/test": "^1.57.0",
+    "@types/node": "^22.0.0",
+    "@types/pg": "^8.16.0",
+    "dotenv": "^16.6.1"
+  },
+  "dependencies": {
+    "p-limit": "^7.2.0",
+    "pg": "^8.16.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
