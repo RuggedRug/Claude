@@ -6,15 +6,24 @@ from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(__file__), '..', '.env'))
 
 
+def get_database_url():
+    """Get database URL, converting postgres:// to postgresql:// for SQLAlchemy 2.x."""
+    url = os.environ.get(
+        'DATABASE_URL',
+        'postgresql://postgres:password@localhost:5432/mux_analytics'
+    )
+    # SQLAlchemy 2.x requires postgresql:// instead of postgres://
+    if url.startswith('postgres://'):
+        url = url.replace('postgres://', 'postgresql://', 1)
+    return url
+
+
 class Config:
     """Base configuration."""
     SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
     # Database
-    SQLALCHEMY_DATABASE_URI = os.environ.get(
-        'DATABASE_URL',
-        'postgresql://postgres:password@localhost:5432/mux_analytics'
-    )
+    SQLALCHEMY_DATABASE_URI = get_database_url()
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ENGINE_OPTIONS = {
         'pool_pre_ping': True,
