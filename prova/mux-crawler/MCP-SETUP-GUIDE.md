@@ -61,6 +61,33 @@ This guide sets up a unified workflow where **Claude Desktop is your single inte
 
 This allows Claude Desktop to run commands directly on your Mac Mini.
 
+### MCP Security: What Claude CAN and CANNOT Do
+
+With the secure configuration below, Claude's access is restricted:
+
+#### ✅ Claude CAN:
+| Action | Example Commands |
+|--------|------------------|
+| Read files | `cat`, `head`, `tail`, `less` |
+| List directories | `ls`, `find` |
+| Check processes | `ps`, `lsof`, `launchctl list` |
+| View logs | `tail -f ~/Library/Logs/...` |
+| Run git commands | `git status`, `git log`, `git pull` |
+| Run project scripts | `./start-webapp.sh`, `./auto-build.sh` |
+| Run npm/node/python | `npm install`, `python app.py` |
+| Search files | `grep`, `find` |
+
+#### ❌ Claude CANNOT:
+| Action | Blocked Commands |
+|--------|------------------|
+| Delete files/folders | `rm`, `rm -rf`, `rmdir` |
+| System administration | `sudo`, `su` |
+| Change permissions | `chmod`, `chown` |
+| Download from internet | `curl`, `wget` |
+| Modify system files | Any file outside allowed directories |
+| Kill arbitrary processes | `kill`, `killall` (except own processes) |
+| Access other directories | Only allowed in project + logs folders |
+
 ### Step 1: Install MCP Shell Server
 
 ```bash
@@ -74,7 +101,7 @@ npx -y @mako10k/mcp-shell-server --help
 > **Note:** We use [@mako10k/mcp-shell-server](https://www.npmjs.com/package/@mako10k/mcp-shell-server),
 > a secure MCP server for shell operations and terminal management.
 
-### Step 2: Configure Claude Desktop
+### Step 2: Configure Claude Desktop (Secure Mode)
 
 Create or update the Claude Desktop configuration file:
 
@@ -82,7 +109,7 @@ Create or update the Claude Desktop configuration file:
 # Create config directory if needed
 mkdir -p ~/Library/Application\ Support/Claude
 
-# Create the configuration file
+# Create the configuration file with SECURITY RESTRICTIONS
 cat > ~/Library/Application\ Support/Claude/claude_desktop_config.json << 'EOF'
 {
   "mcpServers": {
@@ -91,13 +118,38 @@ cat > ~/Library/Application\ Support/Claude/claude_desktop_config.json << 'EOF'
       "args": ["-y", "@mako10k/mcp-shell-server"],
       "cwd": "/Users/roger/Documents/Developments2/w_mux_crawler/Github/prova/mux-crawler",
       "env": {
-        "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+        "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin",
+        "MCP_SHELL_SECURITY_MODE": "restrictive",
+        "MCP_SHELL_ALLOWED_WORKDIRS": "/Users/roger/Documents/Developments2/w_mux_crawler,/Users/roger/Library/Logs/MuxCrawler",
+        "MCP_SHELL_MAX_EXECUTION_TIME": "300",
+        "MCP_SHELL_MAX_MEMORY_MB": "1024",
+        "MCP_DISABLED_TOOLS": "process_terminate"
       }
     }
   }
 }
 EOF
 ```
+
+### Security Configuration Explained
+
+| Setting | Value | Purpose |
+|---------|-------|---------|
+| `MCP_SHELL_SECURITY_MODE` | `restrictive` | Use strict command allowlist |
+| `MCP_SHELL_ALLOWED_WORKDIRS` | Project + Logs paths | Limit file access to these folders only |
+| `MCP_SHELL_MAX_EXECUTION_TIME` | `300` | Commands timeout after 5 minutes |
+| `MCP_SHELL_MAX_MEMORY_MB` | `1024` | Limit memory usage to 1GB |
+| `MCP_DISABLED_TOOLS` | `process_terminate` | Prevent killing processes |
+
+### Security Modes Available
+
+| Mode | Description | Recommended For |
+|------|-------------|-----------------|
+| `restrictive` | Strict allowlist, limited commands | **Production (recommended)** |
+| `enhanced` | LLM-based safety evaluation | Balanced security |
+| `enhanced-fast` | Faster LLM checks | Performance-focused |
+| `permissive` | Minimal restrictions | Development only |
+| `custom` | Define your own rules | Advanced users |
 
 ### Step 3: Restart Claude Desktop
 
@@ -120,13 +172,27 @@ If MCP isn't working:
 # Check config file is valid JSON
 cat ~/Library/Application\ Support/Claude/claude_desktop_config.json | python3 -m json.tool
 
-# Test MCP server manually
+# Test MCP server manually with security settings
 cd /Users/roger/Documents/Developments2/w_mux_crawler/Github/prova/mux-crawler
-npx -y @mako10k/mcp-shell-server
+MCP_SHELL_SECURITY_MODE=restrictive npx -y @mako10k/mcp-shell-server
 
 # Find npx path if needed
 which npx
 # Use full path in config: "/opt/homebrew/bin/npx"
+```
+
+### If Security is Too Restrictive
+
+If Claude cannot run a command you expected, you can temporarily switch to `enhanced` mode:
+
+```json
+"MCP_SHELL_SECURITY_MODE": "enhanced"
+```
+
+Or add specific directories to the allowed list:
+
+```json
+"MCP_SHELL_ALLOWED_WORKDIRS": "/Users/roger/Documents/Developments2/w_mux_crawler,/Users/roger/Library/Logs/MuxCrawler,/additional/path"
 ```
 
 ---
@@ -318,8 +384,8 @@ Now you can use:
 # 1. Check config file syntax
 cat ~/Library/Application\ Support/Claude/claude_desktop_config.json | python3 -m json.tool
 
-# 2. Test MCP server manually
-npx -y @mako10k/mcp-shell-server
+# 2. Test MCP server manually with security mode
+MCP_SHELL_SECURITY_MODE=restrictive npx -y @mako10k/mcp-shell-server
 
 # 3. Check Claude Desktop logs
 # Menu: Help → Show Logs
@@ -327,6 +393,9 @@ npx -y @mako10k/mcp-shell-server
 # 4. Try with full npx path
 which npx  # e.g., /opt/homebrew/bin/npx
 # Update config to use full path
+
+# 5. If commands are blocked, check security mode
+# Try switching from "restrictive" to "enhanced" temporarily
 ```
 
 ### Auto-Build Not Working
@@ -445,12 +514,19 @@ cd prova/mux-crawler
 
 **Your Setup:**
 - ✅ **Claude Desktop** = Single UI for everything
-- ✅ **MCP Server** = Gives Claude direct access for debugging
+- ✅ **MCP Server** = Gives Claude direct access for debugging (with security restrictions)
 - ✅ **Auto-build** = Deploys GitHub changes automatically
 - ✅ **Flask Webapp** = Your application at localhost:5000
+
+**Security Summary:**
+- 🔒 **Mode**: Restrictive (strict command allowlist)
+- 🔒 **Directories**: Limited to project folder + logs only
+- 🔒 **Blocked**: `rm`, `sudo`, `chmod`, `curl`, `wget`, `kill`
+- 🔒 **Timeout**: Commands limited to 5 minutes
+- 🔒 **Memory**: Limited to 1GB per command
 
 **Your Workflow:**
 1. Chat with Claude Desktop
 2. Request features → auto-deployed via GitHub
-3. Debug issues → handled via MCP
-4. Everything in one place!
+3. Debug issues → handled via MCP (with security limits)
+4. Everything in one place, securely!
