@@ -1,56 +1,141 @@
-# Hybrid Claude Setup Guide
+# Claude Desktop + MCP + Auto-Deploy Setup Guide
 
-This guide sets up the best of both worlds: **auto-deployment from GitHub** for regular changes, plus **Claude Code CLI** for direct debugging when needed.
+This guide sets up a unified workflow where **Claude Desktop is your single interface**, with MCP for local debugging and auto-deploy for GitHub changes.
 
 ## Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              Mac Mini                                        │
-│                                                                              │
-│   ┌─────────────────┐         ┌─────────────────┐         ┌──────────────┐  │
-│   │ Claude Desktop  │         │ Claude Code CLI │         │ Auto-build   │  │
-│   │ (casual chat)   │         │ (debugging)     │         │ Service      │  │
-│   └────────┬────────┘         └────────┬────────┘         └───────┬──────┘  │
-│            │                           │                          │         │
-│            │ Internet                  │ Direct                   │ Polls   │
-│            ▼                           ▼                          ▼         │
-│   ┌─────────────────────────────────────────────────────────────────────┐   │
-│   │                         Project Files                                │   │
-│   │   /Users/roger/Documents/Developments2/w_mux_crawler/Github          │   │
-│   └─────────────────────────────────────────────────────────────────────┘   │
-│                                    │                                         │
-└────────────────────────────────────┼─────────────────────────────────────────┘
-                                     │
-            ┌────────────────────────┼────────────────────────┐
-            │                        │                        │
-            ▼                        ▼                        ▼
-   ┌─────────────────┐      ┌─────────────────┐      ┌─────────────────┐
-   │  Claude API     │      │     GitHub      │      │  Flask Webapp   │
-   │  (cloud)        │      │  (repository)   │      │  (localhost)    │
-   └─────────────────┘      └─────────────────┘      └─────────────────┘
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                                Mac Mini                                       │
+│                                                                               │
+│   ┌───────────────────┐              ┌───────────────────┐                   │
+│   │  Claude Desktop   │◄────MCP─────►│    MCP Server     │                   │
+│   │  (Your Single UI) │              │  (shell access)   │                   │
+│   └─────────┬─────────┘              └─────────┬─────────┘                   │
+│             │                                  │                              │
+│             │ Internet                         │ Direct access                │
+│             │                                  ▼                              │
+│             │                        ┌───────────────────┐                   │
+│             │                        │   Project Files   │                   │
+│             │                        │   • Code          │                   │
+│             │                        │   • Logs          │                   │
+│             │                        │   • Webapp        │                   │
+│             │                        └─────────┬─────────┘                   │
+│             │                                  │                              │
+│             │                                  │ polls                        │
+│             │                        ┌─────────┴─────────┐                   │
+│             │                        │   Auto-build      │                   │
+│             │                        │   Service         │                   │
+│             │                        └─────────┬─────────┘                   │
+│             │                                  │                              │
+└─────────────┼──────────────────────────────────┼──────────────────────────────┘
+              │                                  │
+              ▼                                  ▼
+     ┌─────────────────┐                ┌─────────────────┐
+     │   Claude API    │                │     GitHub      │
+     │   (cloud)       │                │   Repository    │
+     └────────┬────────┘                └────────┬────────┘
+              │                                  ▲
+              │                                  │ push
+              │         ┌─────────────────┐      │
+              └────────►│  Claude Code    │──────┘
+                        │  (in cloud)     │
+                        └─────────────────┘
 ```
 
-## When to Use What
+## How It Works
 
-| Scenario | Tool | Why |
-|----------|------|-----|
-| Request new features | Claude Desktop | Changes go through GitHub, auto-deployed |
-| Quick questions | Claude Desktop | No code changes needed |
-| Debugging errors | Claude Code CLI | I can see logs and run commands directly |
-| Fixing failed builds | Claude Code CLI | I can diagnose and fix immediately |
-| Reviewing code | Either | Depends on complexity |
+| What You Ask | Mode | What Happens |
+|--------------|------|--------------|
+| "Add feature X to the webapp" | **Cloud** | Claude Code writes code → pushes to GitHub → auto-build deploys |
+| "Debug this error: [error]" | **MCP** | Claude reads logs/files directly via MCP → fixes in real-time |
+| "Check if services are running" | **MCP** | Claude runs `launchctl` commands via MCP |
+| "Show me recent commits" | **MCP** | Claude runs `git log` via MCP |
+| "Restart the webapp" | **MCP** | Claude runs stop/start scripts via MCP |
+
+**One UI (Claude Desktop), two modes (Cloud for features, MCP for debugging)!**
 
 ---
 
-## Part 1: Auto-Deploy Setup (GitHub Polling)
+## Part 1: MCP Server Setup
 
-This handles automatic deployment when I push changes to GitHub.
+This allows Claude Desktop to run commands directly on your Mac Mini.
 
-### Step 1: Ensure Repository is Cloned
+### Step 1: Install MCP Shell Server
 
 ```bash
-# Check if already cloned
+# Install globally
+npm install -g @anthropic-ai/mcp-server-shell
+
+# Verify installation
+which mcp-server-shell || npx -y @anthropic-ai/mcp-server-shell --version
+```
+
+### Step 2: Configure Claude Desktop
+
+Create or update the Claude Desktop configuration file:
+
+```bash
+# Create config directory if needed
+mkdir -p ~/Library/Application\ Support/Claude
+
+# Create the configuration file
+cat > ~/Library/Application\ Support/Claude/claude_desktop_config.json << 'EOF'
+{
+  "mcpServers": {
+    "mac-mini": {
+      "command": "npx",
+      "args": ["-y", "@anthropic-ai/mcp-server-shell"],
+      "cwd": "/Users/roger/Documents/Developments2/w_mux_crawler/Github/prova/mux-crawler",
+      "env": {
+        "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
+      }
+    }
+  }
+}
+EOF
+```
+
+### Step 3: Restart Claude Desktop
+
+1. **Quit** Claude Desktop completely (Cmd+Q, not just close window)
+2. **Reopen** Claude Desktop
+3. The MCP server should now be available
+
+### Step 4: Verify MCP Connection
+
+In Claude Desktop, ask:
+> "Use MCP to run `pwd` and show me the current directory"
+
+If working, Claude will execute the command and show the result.
+
+### MCP Troubleshooting
+
+If MCP isn't working:
+
+```bash
+# Check config file is valid JSON
+cat ~/Library/Application\ Support/Claude/claude_desktop_config.json | python3 -m json.tool
+
+# Test MCP server manually
+cd /Users/roger/Documents/Developments2/w_mux_crawler/Github/prova/mux-crawler
+npx -y @anthropic-ai/mcp-server-shell
+
+# Find npx path if needed
+which npx
+# Use full path in config: "/opt/homebrew/bin/npx"
+```
+
+---
+
+## Part 2: Auto-Deploy Setup
+
+This automatically pulls and deploys changes when Claude Code pushes to GitHub.
+
+### Step 1: Verify Repository
+
+```bash
+# Check repository exists
 ls /Users/roger/Documents/Developments2/w_mux_crawler/Github
 
 # If not, clone it
@@ -65,288 +150,304 @@ git checkout claude/setup-playwright-scripts-Q9Wer
 ```bash
 cd /Users/roger/Documents/Developments2/w_mux_crawler/Github/prova/mux-crawler
 
-# Install with notifications and auto-restart
+# Install with 2-minute interval, auto-restart webapp, and notifications
 ./install-auto-build.sh --interval 2 --restart --notify
 ```
 
-### Step 3: Verify It's Running
+### Step 3: Verify Auto-Build is Running
 
 ```bash
 # Check service status
 launchctl list | grep muxcrawler
 
-# Should show something like:
-# -    0    com.muxcrawler.autobuild
-
-# Watch the logs
+# Watch logs
 tail -f ~/Library/Logs/MuxCrawler/auto-build.log
 ```
 
-### Auto-Build Commands Reference
+### Auto-Build Options
 
-| Action | Command |
-|--------|---------|
-| View logs | `tail -f ~/Library/Logs/MuxCrawler/auto-build.log` |
-| Check status | `launchctl list \| grep muxcrawler` |
-| Force sync now | `./auto-build.sh` |
-| Change interval | `./install-auto-build.sh --interval 5 --restart --notify` |
-| Stop service | `launchctl unload ~/Library/LaunchAgents/com.muxcrawler.autobuild.plist` |
-| Start service | `launchctl load ~/Library/LaunchAgents/com.muxcrawler.autobuild.plist` |
-| Uninstall | `./install-auto-build.sh --uninstall` |
-
----
-
-## Part 2: Claude Code CLI Setup (Direct Debugging)
-
-This allows me to run commands directly on your Mac Mini when debugging.
-
-### Step 1: Install Node.js (if not installed)
-
-```bash
-# Check if Node.js is installed
-node --version
-
-# If not installed, install via Homebrew
-brew install node
-```
-
-### Step 2: Install Claude Code CLI
-
-```bash
-npm install -g @anthropic-ai/claude-code
-```
-
-### Step 3: Authenticate Claude Code
-
-```bash
-# Run claude and follow the authentication prompts
-claude
-```
-
-This will open a browser to authenticate with your Anthropic account.
-
-### Step 4: Create a Launch Script
-
-For convenience, create a script to start Claude Code in the project directory:
-
-```bash
-cat > /Users/roger/Documents/Developments2/w_mux_crawler/Github/prova/mux-crawler/start-claude.sh << 'EOF'
-#!/bin/bash
-cd /Users/roger/Documents/Developments2/w_mux_crawler/Github/prova/mux-crawler
-claude
-EOF
-
-chmod +x /Users/roger/Documents/Developments2/w_mux_crawler/Github/prova/mux-crawler/start-claude.sh
-```
-
-### Step 5: Using Claude Code CLI
-
-```bash
-cd /Users/roger/Documents/Developments2/w_mux_crawler/Github/prova/mux-crawler
-
-# Start Claude Code
-claude
-
-# Or use the shortcut
-./start-claude.sh
-```
-
-Now you're in a terminal chat with me, and I can:
-- Read/write files directly
-- Run shell commands
-- See error logs
-- Debug issues in real-time
+| Option | Description |
+|--------|-------------|
+| `--interval N` | Check GitHub every N minutes (default: 5) |
+| `--restart` | Auto-restart webapp after updates |
+| `--notify` | Show macOS notifications |
+| `--uninstall` | Remove the service |
 
 ---
 
 ## Part 3: Webapp Setup
 
-### Start the Webapp
+### Install Dependencies (One Time)
 
 ```bash
 cd /Users/roger/Documents/Developments2/w_mux_crawler/Github/prova/mux-crawler
 
-# Development mode (with auto-reload)
+# Create/activate virtual environment
+python3 -m venv venv
+source venv/bin/activate
+
+# Install Python dependencies
+pip install -r webapp/requirements.txt
+```
+
+### Start Webapp
+
+```bash
+# Development mode (auto-reload on changes)
 ./start-webapp.sh
 
-# Production mode (with Gunicorn)
+# Production mode (Gunicorn)
 ./start-webapp-prod.sh
 ```
 
 Access at: **http://localhost:5000**
 
-### Stop the Webapp
+### Stop Webapp
 
 ```bash
 ./stop-webapp.sh
 ```
 
-### Webapp Logs
-
-```bash
-# If running in foreground, logs appear in terminal
-# If running in background:
-tail -f webapp.log
-```
-
 ---
 
-## Workflow Examples
+## Part 4: Shell Aliases (Optional)
 
-### Example 1: Requesting a New Feature
-
-1. Open **Claude Desktop** on your Mac Mini
-2. Chat: *"Add a dark mode toggle to the webapp"*
-3. I make changes and push to GitHub
-4. Within 2 minutes, auto-build pulls and deploys
-5. You get a macOS notification
-6. Refresh browser to see changes
-
-### Example 2: Debugging an Error
-
-1. You see an error in the webapp
-2. Open **Terminal** and start Claude Code CLI:
-   ```bash
-   cd /Users/roger/Documents/Developments2/w_mux_crawler/Github/prova/mux-crawler
-   claude
-   ```
-3. Tell me: *"The webapp crashes when I click export. Here's the error: [paste error]"*
-4. I can:
-   - Read the log files directly
-   - Check the code
-   - Run test commands
-   - Fix and test immediately
-5. Once fixed, I commit to GitHub (changes sync everywhere)
-
-### Example 3: Checking System Status
-
-Using Claude Desktop or Claude Code CLI:
-- *"Is the auto-build service running?"*
-- *"Show me recent deployment logs"*
-- *"What's the current git commit?"*
-
-With Claude Code CLI, I can answer these by running commands directly.
-
----
-
-## Quick Status Commands
-
-Add these aliases to your `~/.zshrc`:
+Add convenient shortcuts to your shell:
 
 ```bash
 cat >> ~/.zshrc << 'EOF'
 
-# Mux Crawler shortcuts
-alias mux-status='echo "=== Auto-build ===" && tail -3 ~/Library/Logs/MuxCrawler/auto-build.log && echo && echo "=== Git Status ===" && cd /Users/roger/Documents/Developments2/w_mux_crawler/Github && git log -1 --format="%h %ci %s"'
+# === Mux Crawler Shortcuts ===
+export MUX_DIR="/Users/roger/Documents/Developments2/w_mux_crawler/Github/prova/mux-crawler"
+
+# Status check
+alias mux-status='echo "=== Auto-build Log ===" && tail -5 ~/Library/Logs/MuxCrawler/auto-build.log && echo && echo "=== Current Commit ===" && cd /Users/roger/Documents/Developments2/w_mux_crawler/Github && git log -1 --format="%h %s (%cr)"'
+
+# Log watching
 alias mux-logs='tail -f ~/Library/Logs/MuxCrawler/auto-build.log'
-alias mux-sync='cd /Users/roger/Documents/Developments2/w_mux_crawler/Github/prova/mux-crawler && ./auto-build.sh'
-alias mux-claude='cd /Users/roger/Documents/Developments2/w_mux_crawler/Github/prova/mux-crawler && claude'
-alias mux-webapp='cd /Users/roger/Documents/Developments2/w_mux_crawler/Github/prova/mux-crawler && ./start-webapp.sh'
+
+# Force sync
+alias mux-sync='cd $MUX_DIR && ./auto-build.sh'
+
+# Webapp control
+alias mux-start='cd $MUX_DIR && ./start-webapp.sh'
+alias mux-stop='cd $MUX_DIR && ./stop-webapp.sh'
+alias mux-restart='cd $MUX_DIR && ./stop-webapp.sh; ./start-webapp.sh'
+
+# Quick directory access
+alias mux-cd='cd $MUX_DIR'
 EOF
 
 source ~/.zshrc
 ```
 
 Now you can use:
+
 | Command | Action |
 |---------|--------|
-| `mux-status` | Show last sync and current commit |
+| `mux-status` | Show sync status and current commit |
 | `mux-logs` | Watch auto-build logs live |
-| `mux-sync` | Force sync with GitHub now |
-| `mux-claude` | Start Claude Code CLI in project |
-| `mux-webapp` | Start the webapp |
+| `mux-sync` | Force sync with GitHub |
+| `mux-start` | Start the webapp |
+| `mux-stop` | Stop the webapp |
+| `mux-restart` | Restart the webapp |
+| `mux-cd` | Go to project directory |
+
+---
+
+## Workflow Examples
+
+### Example 1: Request a New Feature
+
+**You (in Claude Desktop):** "Add a dark mode toggle to the settings page"
+
+**What happens:**
+1. Claude Code (cloud) writes the code
+2. Claude Code pushes to GitHub
+3. Auto-build detects the change (within 2 min)
+4. Auto-build pulls and restarts webapp
+5. You get a macOS notification
+6. Refresh browser to see the feature!
+
+---
+
+### Example 2: Debug an Error
+
+**You (in Claude Desktop):** "The webapp shows an error when I click Export. Can you check the logs?"
+
+**What happens:**
+1. Claude uses MCP to run: `tail -50 webapp/logs/error.log`
+2. Claude sees the error and identifies the issue
+3. Claude uses MCP to check the relevant code file
+4. Claude explains the problem and offers to fix it
+5. If you approve, Claude Code pushes fix → auto-deploys
+
+---
+
+### Example 3: Check System Status
+
+**You (in Claude Desktop):** "Is everything running properly?"
+
+**What happens:**
+1. Claude uses MCP to check auto-build: `launchctl list | grep muxcrawler`
+2. Claude uses MCP to check webapp: `lsof -i :5000`
+3. Claude uses MCP to show recent logs: `tail -10 ~/Library/Logs/MuxCrawler/auto-build.log`
+4. Claude reports status of all services
+
+---
+
+### Example 4: Manual Operations
+
+**You (in Claude Desktop):** "Restart the webapp"
+
+**What happens:**
+1. Claude uses MCP to run: `./stop-webapp.sh`
+2. Claude uses MCP to run: `./start-webapp.sh`
+3. Claude confirms webapp is running
 
 ---
 
 ## Troubleshooting
 
-### Auto-build not working
+### MCP Not Working
 
 ```bash
-# Check if service is running
+# 1. Check config file syntax
+cat ~/Library/Application\ Support/Claude/claude_desktop_config.json | python3 -m json.tool
+
+# 2. Test MCP server manually
+npx -y @anthropic-ai/mcp-server-shell
+
+# 3. Check Claude Desktop logs
+# Menu: Help → Show Logs
+
+# 4. Try with full npx path
+which npx  # e.g., /opt/homebrew/bin/npx
+# Update config to use full path
+```
+
+### Auto-Build Not Working
+
+```bash
+# 1. Check service status
 launchctl list | grep muxcrawler
 
-# Run manually to see errors
+# 2. Run manually to see errors
 cd /Users/roger/Documents/Developments2/w_mux_crawler/Github/prova/mux-crawler
 ./auto-build.sh
 
-# Reinstall service
+# 3. Check logs for errors
+cat ~/Library/Logs/MuxCrawler/stderr.log
+
+# 4. Reinstall service
 ./install-auto-build.sh --interval 2 --restart --notify
 ```
 
-### Claude Code CLI not found
+### Webapp Not Starting
 
 ```bash
-# Reinstall
-npm install -g @anthropic-ai/claude-code
+# 1. Check if port is in use
+lsof -i :5000
 
-# Check npm global path
-npm config get prefix
-# Add to PATH if needed:
-export PATH="$(npm config get prefix)/bin:$PATH"
-```
-
-### Webapp won't start
-
-```bash
-# Check Python environment
+# 2. Check Python environment
 cd /Users/roger/Documents/Developments2/w_mux_crawler/Github/prova/mux-crawler
 source venv/bin/activate
 pip install -r webapp/requirements.txt
 
-# Check for port conflict
-lsof -i :5000
-
-# Run directly to see errors
+# 3. Run directly to see errors
 cd webapp
 python app.py
+
+# 4. Check .env file exists and has correct DATABASE_URL
+cat ../.env
 ```
 
-### Git conflicts after auto-build
+### Changes Not Appearing
 
 ```bash
+# 1. Force pull from GitHub
 cd /Users/roger/Documents/Developments2/w_mux_crawler/Github
-
-# Reset to remote version
 git fetch origin claude/setup-playwright-scripts-Q9Wer
 git reset --hard origin/claude/setup-playwright-scripts-Q9Wer
+
+# 2. Restart webapp
+cd prova/mux-crawler
+./stop-webapp.sh
+./start-webapp.sh
 ```
 
 ---
 
-## Summary Checklist
+## Setup Checklist
 
-### Initial Setup (One Time)
+### One-Time Setup
 
-- [ ] Repository cloned to `/Users/roger/Documents/Developments2/w_mux_crawler/Github`
-- [ ] Auto-build service installed (`./install-auto-build.sh --interval 2 --restart --notify`)
-- [ ] Claude Code CLI installed (`npm install -g @anthropic-ai/claude-code`)
-- [ ] Claude Code authenticated (`claude` → follow prompts)
-- [ ] Shell aliases added to `~/.zshrc`
-- [ ] Python venv set up (`source venv/bin/activate && pip install -r webapp/requirements.txt`)
+- [ ] **Repository cloned** to `/Users/roger/Documents/Developments2/w_mux_crawler/Github`
+- [ ] **MCP server installed**: `npm install -g @anthropic-ai/mcp-server-shell`
+- [ ] **Claude Desktop configured**: config file at `~/Library/Application Support/Claude/claude_desktop_config.json`
+- [ ] **Claude Desktop restarted** after config change
+- [ ] **MCP verified**: Ask Claude to run a command via MCP
+- [ ] **Auto-build installed**: `./install-auto-build.sh --interval 2 --restart --notify`
+- [ ] **Auto-build verified**: `launchctl list | grep muxcrawler`
+- [ ] **Python venv created**: `python3 -m venv venv`
+- [ ] **Dependencies installed**: `pip install -r webapp/requirements.txt`
+- [ ] **Shell aliases added** (optional): Added to `~/.zshrc`
 
-### Daily Use
+### Verify Everything Works
 
-| Task | How |
-|------|-----|
-| Request features | Claude Desktop |
-| Debug issues | Claude Code CLI (`mux-claude`) |
-| Check status | `mux-status` |
-| View logs | `mux-logs` |
-| Force sync | `mux-sync` |
-| Start webapp | `mux-webapp` |
+1. **MCP Test**: Ask Claude "Run `pwd` via MCP"
+2. **Auto-build Test**: Check `tail ~/Library/Logs/MuxCrawler/auto-build.log`
+3. **Webapp Test**: Run `./start-webapp.sh` and visit http://localhost:5000
 
 ---
 
-## Files Reference
+## Quick Reference
+
+### Commands via MCP (Ask Claude)
+
+| Request | Claude Uses |
+|---------|-------------|
+| "Show recent logs" | `tail -20 ~/Library/Logs/MuxCrawler/auto-build.log` |
+| "Is webapp running?" | `lsof -i :5000` |
+| "Check git status" | `git status` |
+| "Show last commit" | `git log -1` |
+| "Restart webapp" | `./stop-webapp.sh && ./start-webapp.sh` |
+| "Force sync now" | `./auto-build.sh` |
+
+### Service Management
+
+| Action | Command |
+|--------|---------|
+| View auto-build logs | `tail -f ~/Library/Logs/MuxCrawler/auto-build.log` |
+| Check auto-build status | `launchctl list \| grep muxcrawler` |
+| Stop auto-build | `launchctl unload ~/Library/LaunchAgents/com.muxcrawler.autobuild.plist` |
+| Start auto-build | `launchctl load ~/Library/LaunchAgents/com.muxcrawler.autobuild.plist` |
+| Uninstall auto-build | `./install-auto-build.sh --uninstall` |
+
+### File Locations
 
 | File | Purpose |
 |------|---------|
-| `auto-build.sh` | Polls GitHub and deploys updates |
-| `install-auto-build.sh` | Installs/manages auto-build service |
-| `sync-repo.sh` | Manual sync with GitHub |
-| `start-webapp.sh` | Start Flask dev server |
-| `start-webapp-prod.sh` | Start with Gunicorn |
-| `stop-webapp.sh` | Stop the webapp |
-| `start-claude.sh` | Start Claude Code CLI (create with setup above) |
-| `setup-mac.sh` | Initial Mac setup |
+| `~/Library/Application Support/Claude/claude_desktop_config.json` | Claude Desktop MCP config |
+| `~/Library/LaunchAgents/com.muxcrawler.autobuild.plist` | Auto-build service config |
+| `~/Library/Logs/MuxCrawler/auto-build.log` | Auto-build logs |
+| `/Users/roger/Documents/Developments2/w_mux_crawler/Github/` | Git repository |
+| `.../prova/mux-crawler/` | Project root |
+| `.../prova/mux-crawler/webapp/` | Flask webapp |
+| `.../prova/mux-crawler/.env` | Environment variables |
+
+---
+
+## Summary
+
+**Your Setup:**
+- ✅ **Claude Desktop** = Single UI for everything
+- ✅ **MCP Server** = Gives Claude direct access for debugging
+- ✅ **Auto-build** = Deploys GitHub changes automatically
+- ✅ **Flask Webapp** = Your application at localhost:5000
+
+**Your Workflow:**
+1. Chat with Claude Desktop
+2. Request features → auto-deployed via GitHub
+3. Debug issues → handled via MCP
+4. Everything in one place!
