@@ -1,250 +1,230 @@
-# MCP Local Setup Guide for Mac Mini
+# Claude Code Auto-Deployment Setup Guide
 
-This guide explains how to set up an MCP (Model Context Protocol) server on your Mac Mini so that Claude Desktop can execute commands directly on your machine.
+This guide explains how to set up automatic deployment on your Mac Mini when Claude Code (in the cloud) makes changes to GitHub.
 
 ## Architecture Overview
 
 ```
-┌─────────────────────────────────────────────────┐
-│                   Mac Mini                       │
-│                                                  │
-│  ┌─────────────────┐      ┌─────────────────┐   │
-│  │ Claude Desktop  │◄────►│   MCP Server    │   │
-│  │                 │      │                 │   │
-│  │ - Chat interface│      │ - Shell access  │   │
-│  │ - MCP client    │      │ - File access   │   │
-│  └─────────────────┘      └─────────────────┘   │
-│                                                  │
-│  ┌─────────────────────────────────────────┐    │
-│  │            Project Files                 │    │
-│  │  - Code repository                       │    │
-│  │  - Webapp                                │    │
-│  │  - Auto-build service                    │    │
-│  └─────────────────────────────────────────┘    │
-└─────────────────────────────────────────────────┘
+┌─────────────────────────────────────┐          ┌─────────────────────────────┐
+│            Mac Mini                  │          │           Cloud             │
+│                                      │          │                             │
+│  ┌─────────────┐    ┌─────────────┐ │          │  ┌─────────────────────┐    │
+│  │   Claude    │    │ Auto-build  │ │  GitHub  │  │    Claude Code      │    │
+│  │   Desktop   │    │   Script    │◄├──────────┼──│   (makes changes)   │    │
+│  │  (Chat UI)  │    │ (polls repo)│ │   pull   │  │         │           │    │
+│  └─────────────┘    └──────┬──────┘ │          │  │         ▼           │    │
+│         │                  │        │          │  │  ┌─────────────┐    │    │
+│         │                  ▼        │          │  │  │   GitHub    │    │    │
+│         │           ┌───────────┐   │          │  │  │   (repo)    │    │    │
+│         │           │  Webapp   │   │          │  │  └─────────────┘    │    │
+│         │           │ (updated) │   │          │  └─────────────────────┘    │
+│         │           └───────────┘   │          │                             │
+│         │                           │          └─────────────────────────────┘
+│         │    Internet               │
+│         └───────────────────────────┼──────────────► Claude API
+│                                     │
+└─────────────────────────────────────┘
 ```
 
-## Prerequisites
+## How It Works
 
-- Mac Mini with macOS
-- Node.js installed (`brew install node`)
-- Claude Desktop app installed
+1. **You** chat with Claude Desktop on your Mac Mini
+2. **Claude Code** (in the cloud) receives your requests
+3. **Claude Code** makes changes and pushes to GitHub
+4. **Auto-build script** on your Mac Mini polls GitHub every X minutes
+5. When new commits are found, it **automatically pulls and deploys**
+
+**No MCP server needed!** Claude Desktop connects directly to Claude's API.
 
 ---
 
-## Step 1: Install MCP Server
+## Setup Steps
 
-Open Terminal and run:
+### Step 1: Clone the Repository (if not done)
 
 ```bash
-# Install the MCP shell server globally
-npm install -g @anthropic-ai/mcp-server-shell
-
-# Verify installation
-npx -y @anthropic-ai/mcp-server-shell --help
+cd ~/Documents/Developments2/w_mux_crawler
+git clone https://github.com/RuggedRug/Claude.git Github
+cd Github
+git checkout claude/setup-playwright-scripts-Q9Wer
 ```
 
----
-
-## Step 2: Configure Claude Desktop
-
-Edit the Claude Desktop configuration file:
-
-### Open the config file:
+### Step 2: Install Auto-Build Service
 
 ```bash
-# Create the directory if it doesn't exist
-mkdir -p ~/Library/Application\ Support/Claude
+cd /Users/roger/Documents/Developments2/w_mux_crawler/Github/prova/mux-crawler
 
-# Open the config file (creates it if needed)
-open -a TextEdit ~/Library/Application\ Support/Claude/claude_desktop_config.json
+# Install with your preferred settings
+./install-auto-build.sh --interval 2 --restart --notify
 ```
 
-### Add this configuration:
+Options:
+| Option | Description |
+|--------|-------------|
+| `--interval N` | Check GitHub every N minutes (default: 5) |
+| `--restart` | Auto-restart webapp after updates |
+| `--notify` | Show macOS notifications |
 
-```json
-{
-  "mcpServers": {
-    "mac-mini": {
-      "command": "npx",
-      "args": ["-y", "@anthropic-ai/mcp-server-shell"],
-      "cwd": "/Users/roger/Documents/Developments2/w_mux_crawler/Github"
-    }
-  }
-}
+### Step 3: Verify It's Running
+
+```bash
+# Check service status
+launchctl list | grep muxcrawler
+
+# Watch the logs
+tail -f ~/Library/Logs/MuxCrawler/auto-build.log
 ```
-
-**Note:** The `cwd` sets the working directory where commands will run.
 
 ---
 
-## Step 3: Restart Claude Desktop
+## Workflow
 
-1. Quit Claude Desktop completely (Cmd+Q)
-2. Reopen Claude Desktop
-3. The MCP server "mac-mini" should now be available
+### When You Want Changes:
+
+1. Open **Claude Desktop** on your Mac Mini
+2. Chat: "Add a new feature to the webapp that does X"
+3. **Claude Code** (me) makes the changes and pushes to GitHub
+4. Within 2 minutes (or your interval), your Mac Mini auto-pulls and deploys
+5. Refresh your browser to see changes!
+
+### Checking Status:
+
+```bash
+# See last sync time
+tail -5 ~/Library/Logs/MuxCrawler/auto-build.log
+
+# See build history
+cat /Users/roger/Documents/Developments2/w_mux_crawler/Github/prova/mux-crawler/.build-history
+
+# Check current commit
+cd /Users/roger/Documents/Developments2/w_mux_crawler/Github
+git log -1 --format="%ci - %s"
+```
+
+### Force Immediate Sync:
+
+```bash
+cd /Users/roger/Documents/Developments2/w_mux_crawler/Github/prova/mux-crawler
+./auto-build.sh
+```
 
 ---
 
-## Verifying the Connection
+## Managing the Service
 
-Once configured, ask Claude to test the connection:
-
-- "Run `pwd` on my Mac Mini"
-- "List files in the current directory"
-- "Check git status"
-
-Claude will have access to tools like:
-- `mcp__mac-mini__shell` - Execute shell commands
-- `mcp__mac-mini__read_file` - Read files
-- `mcp__mac-mini__write_file` - Write files
+| Action | Command |
+|--------|---------|
+| View logs | `tail -f ~/Library/Logs/MuxCrawler/auto-build.log` |
+| Check status | `launchctl list \| grep muxcrawler` |
+| Stop service | `launchctl unload ~/Library/LaunchAgents/com.muxcrawler.autobuild.plist` |
+| Start service | `launchctl load ~/Library/LaunchAgents/com.muxcrawler.autobuild.plist` |
+| Change interval | `./install-auto-build.sh --interval 5 --restart --notify` |
+| Uninstall | `./install-auto-build.sh --uninstall` |
 
 ---
 
-## Advanced Configuration
+## Starting the Webapp
 
-### Multiple Working Directories
+### Development Mode:
+```bash
+cd /Users/roger/Documents/Developments2/w_mux_crawler/Github/prova/mux-crawler
+./start-webapp.sh
+```
+Access at: http://localhost:5000
 
-If you work on multiple projects:
-
-```json
-{
-  "mcpServers": {
-    "mux-crawler": {
-      "command": "npx",
-      "args": ["-y", "@anthropic-ai/mcp-server-shell"],
-      "cwd": "/Users/roger/Documents/Developments2/w_mux_crawler/Github"
-    },
-    "other-project": {
-      "command": "npx",
-      "args": ["-y", "@anthropic-ai/mcp-server-shell"],
-      "cwd": "/Users/roger/Documents/OtherProject"
-    }
-  }
-}
+### Production Mode:
+```bash
+./start-webapp-prod.sh
 ```
 
-### Add Environment Variables
-
-```json
-{
-  "mcpServers": {
-    "mac-mini": {
-      "command": "npx",
-      "args": ["-y", "@anthropic-ai/mcp-server-shell"],
-      "cwd": "/Users/roger/Documents/Developments2/w_mux_crawler/Github",
-      "env": {
-        "PATH": "/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin",
-        "NODE_ENV": "development"
-      }
-    }
-  }
-}
-```
-
-### Restrict Allowed Commands (Security)
-
-For a more secure setup, limit what commands can be run:
-
-```json
-{
-  "mcpServers": {
-    "mac-mini": {
-      "command": "npx",
-      "args": [
-        "-y",
-        "@anthropic-ai/mcp-server-shell",
-        "--allowed-commands",
-        "git,npm,node,cat,ls,tail,head,grep,launchctl,python3,pip"
-      ],
-      "cwd": "/Users/roger/Documents/Developments2/w_mux_crawler/Github"
-    }
-  }
-}
+### Stop Webapp:
+```bash
+./stop-webapp.sh
 ```
 
 ---
 
 ## Troubleshooting
 
-### Claude Desktop Doesn't Show MCP Tools
-
-1. **Check config file is valid JSON:**
-   ```bash
-   cat ~/Library/Application\ Support/Claude/claude_desktop_config.json | python3 -m json.tool
-   ```
-
-2. **Verify npx works:**
-   ```bash
-   npx -y @anthropic-ai/mcp-server-shell --help
-   ```
-
-3. **Restart Claude Desktop completely** (Cmd+Q, then reopen)
-
-### "Command not found" Errors
-
-Add the full PATH to the config:
-
-```json
-{
-  "mcpServers": {
-    "mac-mini": {
-      "command": "/opt/homebrew/bin/npx",
-      "args": ["-y", "@anthropic-ai/mcp-server-shell"],
-      "cwd": "/Users/roger/Documents/Developments2/w_mux_crawler/Github"
-    }
-  }
-}
-```
-
-Find your npx path with: `which npx`
-
-### Permission Denied
+### Auto-build not detecting changes
 
 ```bash
-# Fix npm global permissions
-sudo chown -R $(whoami) ~/.npm
-sudo chown -R $(whoami) /usr/local/lib/node_modules
+# Run manually to see what's happening
+cd /Users/roger/Documents/Developments2/w_mux_crawler/Github/prova/mux-crawler
+./auto-build.sh
+
+# Check if service is running
+launchctl list | grep muxcrawler
+
+# Reinstall if needed
+./install-auto-build.sh --interval 2 --restart --notify
 ```
 
-### MCP Server Crashes
+### Webapp not starting
 
-Check Claude Desktop logs:
-1. Open Claude Desktop
-2. Menu: Help → Show Logs
-3. Look for MCP-related errors
+```bash
+# Check if port is in use
+lsof -i :5000
+
+# Check Python virtual environment
+source venv/bin/activate
+pip install -r webapp/requirements.txt
+
+# Try running directly
+cd webapp
+python app.py
+```
+
+### Changes not appearing
+
+```bash
+# Force pull latest
+cd /Users/roger/Documents/Developments2/w_mux_crawler/Github
+git fetch origin claude/setup-playwright-scripts-Q9Wer
+git reset --hard origin/claude/setup-playwright-scripts-Q9Wer
+
+# Restart webapp
+cd prova/mux-crawler
+./stop-webapp.sh
+./start-webapp.sh
+```
 
 ---
 
-## Quick Reference
+## Quick Status Check
 
-| Task | Command |
+Add this alias to `~/.zshrc`:
+
+```bash
+echo 'alias mux="echo \"=== Auto-build Log ===\" && tail -3 ~/Library/Logs/MuxCrawler/auto-build.log && echo && echo \"=== Current Commit ===\" && cd /Users/roger/Documents/Developments2/w_mux_crawler/Github && git log -1 --format=\"%h %ci %s\""' >> ~/.zshrc
+source ~/.zshrc
+```
+
+Then just run:
+```bash
+mux
+```
+
+---
+
+## Files Reference
+
+| File | Purpose |
 |------|---------|
-| Edit config | `open -a TextEdit ~/Library/Application\ Support/Claude/claude_desktop_config.json` |
-| Validate JSON | `cat ~/Library/Application\ Support/Claude/claude_desktop_config.json \| python3 -m json.tool` |
-| Find npx path | `which npx` |
-| Reinstall MCP | `npm install -g @anthropic-ai/mcp-server-shell` |
-| View Claude logs | Help → Show Logs in Claude Desktop |
+| `auto-build.sh` | Checks GitHub and deploys updates |
+| `install-auto-build.sh` | Installs the auto-build service |
+| `sync-repo.sh` | Manual sync with GitHub |
+| `start-webapp.sh` | Start Flask development server |
+| `start-webapp-prod.sh` | Start with Gunicorn (production) |
+| `stop-webapp.sh` | Stop the webapp |
+| `setup-mac.sh` | Initial setup script |
 
 ---
 
-## What Claude Can Do Once Connected
+## Summary
 
-With MCP configured, Claude can:
+✅ **Claude Desktop** - Your chat interface (already installed)
+✅ **Auto-build service** - Polls GitHub and deploys (install with `./install-auto-build.sh`)
+❌ **MCP Server** - Not needed for this setup
 
-- ✅ Run shell commands (`git pull`, `npm install`, etc.)
-- ✅ Read and write files
-- ✅ Check service status (`launchctl list`)
-- ✅ View logs (`tail -f ~/Library/Logs/...`)
-- ✅ Start/stop the webapp
-- ✅ Run the auto-build script
-- ✅ Debug issues directly
-
----
-
-## Related Files
-
-- `auto-build.sh` - Automatic build script
-- `install-auto-build.sh` - Install auto-build service
-- `sync-repo.sh` - Sync with GitHub repository
-- `setup-mac.sh` - Initial Mac setup script
+That's it! Chat with Claude Desktop, and your changes will auto-deploy within minutes.
