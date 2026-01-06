@@ -1,0 +1,262 @@
+{% extends "base.html" %}
+
+{% block title %}{{ table_name | replace('_', ' ') | title }} - Data Browser{% endblock %}
+
+{% block content %}
+<nav aria-label="breadcrumb" class="mb-3">
+    <ol class="breadcrumb">
+        <li class="breadcrumb-item"><a href="{{ url_for('data_browser') }}">Data Browser</a></li>
+        <li class="breadcrumb-item active">{{ table_name | replace('_', ' ') | title }}</li>
+    </ol>
+</nav>
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">{{ table_name | replace('_', ' ') | title }}</h1>
+    <div>
+        <button class="btn btn-outline-primary me-2" onclick="exportSelected()">
+            <i class="bi bi-download me-1"></i> Export Selected
+        </button>
+        <button class="btn btn-primary" onclick="exportAll()">
+            <i class="bi bi-file-earmark-excel me-1"></i> Export All
+        </button>
+    </div>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <div class="row align-items-center">
+            <div class="col-md-4">
+                <form method="GET" class="d-flex">
+                    <input type="text" class="form-control form-control-sm" name="search" value="{{ search }}" placeholder="Search by view ID...">
+                    <button type="submit" class="btn btn-sm btn-outline-secondary ms-2">
+                        <i class="bi bi-search"></i>
+                    </button>
+                </form>
+            </div>
+            <div class="col-md-4 text-center">
+                <small class="text-muted">
+                    Showing {{ ((pagination.page - 1) * pagination.per_page) + 1 }} -
+                    {{ min(pagination.page * pagination.per_page, pagination.total) }} of {{ pagination.total }}
+                </small>
+            </div>
+            <div class="col-md-4 text-end">
+                <div class="btn-group btn-group-sm">
+                    <button class="btn btn-outline-secondary" onclick="selectAll()">Select All</button>
+                    <button class="btn btn-outline-secondary" onclick="deselectAll()">Deselect All</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive" style="max-height: 600px; overflow-y: auto;">
+            <table class="table table-hover table-sm mb-0">
+                <thead class="sticky-top bg-white">
+                    <tr>
+                        <th style="width: 40px;">
+                            <input type="checkbox" class="form-check-input" id="select-all-checkbox" onchange="toggleAll(this)">
+                        </th>
+                        {% for col in columns %}
+                        <th>
+                            <a href="?sort_by={{ col }}&sort_dir={{ 'asc' if sort_by == col and sort_dir == 'desc' else 'desc' }}&search={{ search }}" class="text-decoration-none text-dark">
+                                {{ col | replace('_', ' ') | title }}
+                                {% if sort_by == col %}
+                                <i class="bi bi-chevron-{{ 'up' if sort_dir == 'asc' else 'down' }}"></i>
+                                {% endif %}
+                            </a>
+                        </th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in data %}
+                    <tr>
+                        <td>
+                            <input type="checkbox" class="form-check-input row-checkbox" value="{{ row.view_id }}">
+                        </td>
+                        {% for col in columns %}
+                        <td>
+                            {% if row[col] is none %}
+                            <span class="text-muted">--</span>
+                            {% elif col == 'view_id' %}
+                            <code class="truncate" style="max-width: 120px; display: inline-block;" title="{{ row[col] }}">
+                                {{ row[col][:16] }}...
+                            </code>
+                            {% elif col in ['source_url', 'full_user_agent', 'video_cdn_trace'] %}
+                            <span class="truncate" style="max-width: 200px; display: inline-block;" title="{{ row[col] }}">
+                                {{ row[col][:40] }}{% if row[col]|length > 40 %}...{% endif %}
+                            </span>
+                            {% elif row[col] is sameas true %}
+                            <span class="badge bg-success">Yes</span>
+                            {% elif row[col] is sameas false %}
+                            <span class="badge bg-secondary">No</span>
+                            {% elif col.endswith('_at') or col.endswith('_date') %}
+                            <small>{{ row[col] }}</small>
+                            {% else %}
+                            {{ row[col] }}
+                            {% endif %}
+                        </td>
+                        {% endfor %}
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="{{ columns|length + 1 }}" class="text-center text-muted py-5">
+                            No data found
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <div class="card-footer">
+        <nav aria-label="Table pagination">
+            <ul class="pagination pagination-sm mb-0 justify-content-center">
+                {% if pagination.has_prev %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ pagination.prev_num }}&sort_by={{ sort_by }}&sort_dir={{ sort_dir }}&search={{ search }}">
+                        <i class="bi bi-chevron-left"></i>
+                    </a>
+                </li>
+                {% endif %}
+
+                {% for p in pagination.iter_pages(left_edge=1, right_edge=1, left_current=2, right_current=2) %}
+                    {% if p %}
+                        <li class="page-item {% if p == pagination.page %}active{% endif %}">
+                            <a class="page-link" href="?page={{ p }}&sort_by={{ sort_by }}&sort_dir={{ sort_dir }}&search={{ search }}">{{ p }}</a>
+                        </li>
+                    {% else %}
+                        <li class="page-item disabled"><span class="page-link">...</span></li>
+                    {% endif %}
+                {% endfor %}
+
+                {% if pagination.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ pagination.next_num }}&sort_by={{ sort_by }}&sort_dir={{ sort_dir }}&search={{ search }}">
+                        <i class="bi bi-chevron-right"></i>
+                    </a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+    </div>
+</div>
+
+<!-- Column Selector Modal -->
+<div class="modal fade" id="columnModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Select Columns to Export</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-2" id="column-checkboxes">
+                    {% for col in columns %}
+                    <div class="col-6">
+                        <div class="form-check">
+                            <input class="form-check-input column-checkbox" type="checkbox" value="{{ col }}" id="col-{{ col }}" checked>
+                            <label class="form-check-label" for="col-{{ col }}">
+                                {{ col | replace('_', ' ') | title }}
+                            </label>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-primary" onclick="performExport()">Export</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const tableName = '{{ table_name }}';
+    let exportViewIds = [];
+    let exportAll_flag = false;
+
+    function toggleAll(checkbox) {
+        document.querySelectorAll('.row-checkbox').forEach(cb => cb.checked = checkbox.checked);
+    }
+
+    function selectAll() {
+        document.querySelectorAll('.row-checkbox').forEach(cb => cb.checked = true);
+        document.getElementById('select-all-checkbox').checked = true;
+    }
+
+    function deselectAll() {
+        document.querySelectorAll('.row-checkbox').forEach(cb => cb.checked = false);
+        document.getElementById('select-all-checkbox').checked = false;
+    }
+
+    function getSelectedIds() {
+        const ids = [];
+        document.querySelectorAll('.row-checkbox:checked').forEach(cb => ids.push(cb.value));
+        return ids;
+    }
+
+    function exportSelected() {
+        const ids = getSelectedIds();
+        if (ids.length === 0) {
+            showToast('Please select at least one row to export', 'warning');
+            return;
+        }
+        exportViewIds = ids;
+        exportAll_flag = false;
+        new bootstrap.Modal(document.getElementById('columnModal')).show();
+    }
+
+    function exportAll() {
+        exportViewIds = [];
+        exportAll_flag = true;
+        new bootstrap.Modal(document.getElementById('columnModal')).show();
+    }
+
+    async function performExport() {
+        const columns = [];
+        document.querySelectorAll('.column-checkbox:checked').forEach(cb => columns.push(cb.value));
+
+        if (columns.length === 0) {
+            showToast('Please select at least one column', 'warning');
+            return;
+        }
+
+        try {
+            showToast('Preparing export...', 'info');
+
+            const response = await fetch('/export', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    table: tableName,
+                    columns: columns,
+                    view_ids: exportAll_flag ? [] : exportViewIds
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error('Export failed');
+            }
+
+            // Download the file
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `mux_${tableName}_${new Date().toISOString().split('T')[0]}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            a.remove();
+
+            bootstrap.Modal.getInstance(document.getElementById('columnModal')).hide();
+            showToast('Export completed!', 'success');
+        } catch (error) {
+            showToast('Export failed: ' + error.message, 'error');
+        }
+    }
+</script>
+{% endblock %}

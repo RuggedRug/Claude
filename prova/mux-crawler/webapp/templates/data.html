@@ -1,0 +1,219 @@
+{% extends "base.html" %}
+
+{% block title %}Data Browser - Mux Crawler{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">Data Browser</h1>
+</div>
+
+<div class="row g-4">
+    <!-- Table Categories -->
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-diagram-3 me-2"></i>Core Tables
+            </div>
+            <div class="list-group list-group-flush">
+                <a href="{{ url_for('view_table', table_name='views') }}" class="list-group-item list-group-item-action d-flex justify-content-between align-items-center">
+                    <span><i class="bi bi-eye me-2"></i>Views</span>
+                    <span class="badge bg-primary rounded-pill">Main</span>
+                </a>
+                <a href="{{ url_for('view_table', table_name='view_ingestion_status') }}" class="list-group-item list-group-item-action">
+                    <i class="bi bi-clipboard-check me-2"></i>Ingestion Status
+                </a>
+            </div>
+        </div>
+
+        <div class="card mt-3">
+            <div class="card-header">
+                <i class="bi bi-speedometer2 me-2"></i>Metrics Tables
+            </div>
+            <div class="list-group list-group-flush">
+                <a href="{{ url_for('view_table', table_name='startup_time_metrics') }}" class="list-group-item list-group-item-action">
+                    <i class="bi bi-stopwatch me-2"></i>Startup Time
+                </a>
+                <a href="{{ url_for('view_table', table_name='smoothness_metrics') }}" class="list-group-item list-group-item-action">
+                    <i class="bi bi-graph-up me-2"></i>Smoothness
+                </a>
+                <a href="{{ url_for('view_table', table_name='video_quality_metrics') }}" class="list-group-item list-group-item-action">
+                    <i class="bi bi-stars me-2"></i>Video Quality
+                </a>
+                <a href="{{ url_for('view_table', table_name='ads_metrics') }}" class="list-group-item list-group-item-action">
+                    <i class="bi bi-megaphone me-2"></i>Ads Metrics
+                </a>
+            </div>
+        </div>
+
+        <div class="card mt-3">
+            <div class="card-header">
+                <i class="bi bi-info-circle me-2"></i>Detail Tables
+            </div>
+            <div class="list-group list-group-flush">
+                <a href="{{ url_for('view_table', table_name='device_details') }}" class="list-group-item list-group-item-action">
+                    <i class="bi bi-phone me-2"></i>Device
+                </a>
+                <a href="{{ url_for('view_table', table_name='client_details') }}" class="list-group-item list-group-item-action">
+                    <i class="bi bi-browser-chrome me-2"></i>Client
+                </a>
+                <a href="{{ url_for('view_table', table_name='player_details') }}" class="list-group-item list-group-item-action">
+                    <i class="bi bi-play-circle me-2"></i>Player
+                </a>
+                <a href="{{ url_for('view_table', table_name='video_metadata') }}" class="list-group-item list-group-item-action">
+                    <i class="bi bi-film me-2"></i>Video Metadata
+                </a>
+                <a href="{{ url_for('view_table', table_name='stream_details') }}" class="list-group-item list-group-item-action">
+                    <i class="bi bi-broadcast me-2"></i>Stream
+                </a>
+                <a href="{{ url_for('view_table', table_name='playback_details') }}" class="list-group-item list-group-item-action">
+                    <i class="bi bi-play-btn me-2"></i>Playback
+                </a>
+                <a href="{{ url_for('view_table', table_name='rendition_details') }}" class="list-group-item list-group-item-action">
+                    <i class="bi bi-aspect-ratio me-2"></i>Rendition
+                </a>
+                <a href="{{ url_for('view_table', table_name='viewer_details') }}" class="list-group-item list-group-item-action">
+                    <i class="bi bi-person me-2"></i>Viewer
+                </a>
+                <a href="{{ url_for('view_table', table_name='network_details') }}" class="list-group-item list-group-item-action">
+                    <i class="bi bi-wifi me-2"></i>Network
+                </a>
+                <a href="{{ url_for('view_table', table_name='geography_details') }}" class="list-group-item list-group-item-action">
+                    <i class="bi bi-geo-alt me-2"></i>Geography
+                </a>
+                <a href="{{ url_for('view_table', table_name='organization_details') }}" class="list-group-item list-group-item-action">
+                    <i class="bi bi-building me-2"></i>Organization
+                </a>
+                <a href="{{ url_for('view_table', table_name='custom_details') }}" class="list-group-item list-group-item-action">
+                    <i class="bi bi-sliders me-2"></i>Custom
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Multi-table Export -->
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-file-earmark-excel me-2"></i>Export Data
+            </div>
+            <div class="card-body">
+                <p class="text-muted mb-4">
+                    Select tables and configure export options. You can export multiple tables to a single Excel file with separate sheets.
+                </p>
+
+                <form id="export-form">
+                    <div class="mb-4">
+                        <label class="form-label fw-bold">Select Tables to Export</label>
+                        <div class="row g-2">
+                            {% for table in tables %}
+                            <div class="col-md-4">
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" value="{{ table }}" id="export-{{ table }}" name="tables">
+                                    <label class="form-check-label" for="export-{{ table }}">
+                                        {{ table | replace('_', ' ') | title }}
+                                    </label>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+
+                    <div class="mb-4">
+                        <label class="form-label fw-bold">Filter by View IDs (Optional)</label>
+                        <textarea class="form-control" id="export-view-ids" rows="3" placeholder="Enter view IDs, one per line (leave empty to export all)"></textarea>
+                        <div class="form-text">Paste view IDs to export only specific views across all selected tables.</div>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button type="button" class="btn btn-primary" onclick="exportMultiTable()">
+                            <i class="bi bi-download me-2"></i>Export to Excel
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" onclick="selectAllTables()">
+                            Select All
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary" onclick="clearSelection()">
+                            Clear Selection
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <div class="card mt-4">
+            <div class="card-header">
+                <i class="bi bi-lightbulb me-2"></i>Tips
+            </div>
+            <div class="card-body">
+                <ul class="mb-0">
+                    <li>Click on any table name on the left to browse its data</li>
+                    <li>Use the search box in table views to filter by view ID</li>
+                    <li>Click column headers to sort data</li>
+                    <li>Select specific rows in table view for targeted export</li>
+                    <li>Use the multi-table export above to combine data from different tables</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    function selectAllTables() {
+        document.querySelectorAll('input[name="tables"]').forEach(cb => cb.checked = true);
+    }
+
+    function clearSelection() {
+        document.querySelectorAll('input[name="tables"]').forEach(cb => cb.checked = false);
+        document.getElementById('export-view-ids').value = '';
+    }
+
+    async function exportMultiTable() {
+        const checkboxes = document.querySelectorAll('input[name="tables"]:checked');
+        if (checkboxes.length === 0) {
+            showToast('Please select at least one table to export', 'warning');
+            return;
+        }
+
+        const viewIdsText = document.getElementById('export-view-ids').value.trim();
+        const viewIds = viewIdsText ? viewIdsText.split('\n').map(id => id.trim()).filter(id => id) : [];
+
+        const tables = [];
+        checkboxes.forEach(cb => {
+            tables.push({
+                table: cb.value,
+                view_ids: viewIds
+            });
+        });
+
+        try {
+            showToast('Preparing export...', 'info');
+
+            const response = await fetch('/export/multi', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tables })
+            });
+
+            if (!response.ok) {
+                throw new Error('Export failed');
+            }
+
+            // Download the file
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `mux_export_${new Date().toISOString().split('T')[0]}.xlsx`;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            a.remove();
+
+            showToast('Export completed!', 'success');
+        } catch (error) {
+            showToast('Export failed: ' + error.message, 'error');
+        }
+    }
+</script>
+{% endblock %}

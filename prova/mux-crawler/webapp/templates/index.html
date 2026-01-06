@@ -1,0 +1,360 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Mux Crawler{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">Dashboard</h1>
+    <div>
+        {% if is_running %}
+        <button class="btn btn-danger btn-action" onclick="stopExtraction()">
+            <i class="bi bi-stop-fill"></i> Stop Extraction
+        </button>
+        {% else %}
+        <button class="btn btn-success btn-action me-2" onclick="startExtraction(false)">
+            <i class="bi bi-play-fill"></i> Start Extraction
+        </button>
+        <button class="btn btn-outline-primary btn-action" onclick="startExtraction(true)">
+            <i class="bi bi-eye"></i> Run Headed
+        </button>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Status Cards -->
+<div class="row g-4 mb-4">
+    <div class="col-md-3">
+        <div class="card stat-card h-100">
+            <div class="card-body d-flex align-items-center">
+                <div class="stat-icon bg-primary bg-opacity-10 text-primary me-3">
+                    <i class="bi bi-collection"></i>
+                </div>
+                <div>
+                    <div class="text-muted small">Total Views</div>
+                    <div class="h4 mb-0" id="stat-total">{{ total_views }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3">
+        <div class="card stat-card h-100">
+            <div class="card-body d-flex align-items-center">
+                <div class="stat-icon bg-success bg-opacity-10 text-success me-3">
+                    <i class="bi bi-check-circle"></i>
+                </div>
+                <div>
+                    <div class="text-muted small">Successful</div>
+                    <div class="h4 mb-0" id="stat-success">{{ status_summary.get('SUCCESS', 0) }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3">
+        <div class="card stat-card h-100">
+            <div class="card-body d-flex align-items-center">
+                <div class="stat-icon bg-danger bg-opacity-10 text-danger me-3">
+                    <i class="bi bi-x-circle"></i>
+                </div>
+                <div>
+                    <div class="text-muted small">Failed</div>
+                    <div class="h4 mb-0" id="stat-failed">{{ status_summary.get('FAILED', 0) }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-3">
+        <div class="card stat-card h-100">
+            <div class="card-body d-flex align-items-center">
+                <div class="stat-icon bg-warning bg-opacity-10 text-warning me-3">
+                    <i class="bi bi-hourglass-split"></i>
+                </div>
+                <div>
+                    <div class="text-muted small">Processing</div>
+                    <div class="h4 mb-0" id="stat-processing">{{ status_summary.get('PROCESSING', 0) }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4 mb-4">
+    <!-- Extraction Status -->
+    <div class="col-md-8">
+        <div class="card h-100">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-activity me-2"></i>Extraction Status</span>
+                <span id="running-indicator" class="{% if is_running %}pulse{% endif %}">
+                    {% if is_running %}
+                    <span class="badge bg-success">Running</span>
+                    {% else %}
+                    <span class="badge bg-secondary">Idle</span>
+                    {% endif %}
+                </span>
+            </div>
+            <div class="card-body">
+                <div class="row mb-4">
+                    <div class="col-md-6">
+                        <h6 class="text-muted mb-2">Last Checkpoint</h6>
+                        <p class="h5" id="checkpoint-date">
+                            {% if checkpoint %}
+                                {{ checkpoint.last_processed_end.strftime('%B %d, %Y') }}
+                            {% else %}
+                                No checkpoint
+                            {% endif %}
+                        </p>
+                    </div>
+                    <div class="col-md-6">
+                        <h6 class="text-muted mb-2">Authentication</h6>
+                        <p class="h5">
+                            {% if auth_exists %}
+                            <span class="text-success"><i class="bi bi-check-circle"></i> Authenticated</span>
+                            {% else %}
+                            <span class="text-danger"><i class="bi bi-x-circle"></i> Not Authenticated</span>
+                            {% endif %}
+                            <button class="btn btn-sm btn-outline-secondary ms-2" onclick="clearAuth()">
+                                <i class="bi bi-arrow-repeat"></i> Reset
+                            </button>
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Progress Chart -->
+                <canvas id="progressChart" height="150"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Stats -->
+    <div class="col-md-4">
+        <div class="card h-100">
+            <div class="card-header">
+                <i class="bi bi-bar-chart me-2"></i>Quick Stats
+            </div>
+            <div class="card-body">
+                <div id="quick-stats">
+                    <div class="mb-3">
+                        <small class="text-muted">Avg. Startup Time</small>
+                        <div class="h5" id="avg-startup">--</div>
+                    </div>
+                    <div class="mb-3">
+                        <small class="text-muted">Avg. Smoothness Score</small>
+                        <div class="h5" id="avg-smoothness">--</div>
+                    </div>
+                    <div class="mb-3">
+                        <small class="text-muted">Avg. Quality Score</small>
+                        <div class="h5" id="avg-quality">--</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-4">
+    <!-- Recent Activity -->
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-clock-history me-2"></i>Recent Activity
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>View ID</th>
+                                <th>Status</th>
+                                <th>Updated</th>
+                                <th>Error</th>
+                            </tr>
+                        </thead>
+                        <tbody id="recent-activity">
+                            {% for item in recent_activity %}
+                            <tr>
+                                <td>
+                                    <code class="truncate d-inline-block" style="max-width: 150px;" title="{{ item.view_id }}">
+                                        {{ item.view_id[:12] }}...
+                                    </code>
+                                </td>
+                                <td>
+                                    <span class="status-badge status-{{ item.status|lower }}">
+                                        {{ item.status }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <small class="text-muted">
+                                        {{ item.updated_at.strftime('%H:%M:%S') if item.updated_at else '--' }}
+                                    </small>
+                                </td>
+                                <td>
+                                    {% if item.last_error %}
+                                    <span class="text-danger truncate d-inline-block" style="max-width: 200px;" title="{{ item.last_error }}">
+                                        {{ item.last_error[:50] }}...
+                                    </span>
+                                    {% else %}
+                                    <span class="text-muted">--</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% else %}
+                            <tr>
+                                <td colspan="4" class="text-center text-muted py-4">No recent activity</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Top Countries -->
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-globe me-2"></i>Top Countries
+            </div>
+            <div class="card-body">
+                <canvas id="countriesChart" height="200"></canvas>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    let progressChart, countriesChart;
+
+    // Initialize charts
+    document.addEventListener('DOMContentLoaded', function() {
+        // Progress chart
+        const progressCtx = document.getElementById('progressChart').getContext('2d');
+        progressChart = new Chart(progressCtx, {
+            type: 'bar',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Views Processed',
+                    data: [],
+                    backgroundColor: 'rgba(59, 130, 246, 0.5)',
+                    borderColor: 'rgb(59, 130, 246)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: { beginAtZero: true }
+                },
+                plugins: {
+                    legend: { display: false }
+                }
+            }
+        });
+
+        // Countries chart
+        const countriesCtx = document.getElementById('countriesChart').getContext('2d');
+        countriesChart = new Chart(countriesCtx, {
+            type: 'doughnut',
+            data: {
+                labels: [],
+                datasets: [{
+                    data: [],
+                    backgroundColor: [
+                        '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6',
+                        '#ec4899', '#14b8a6', '#f97316', '#6366f1', '#84cc16'
+                    ]
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'bottom',
+                        labels: { boxWidth: 12 }
+                    }
+                }
+            }
+        });
+
+        // Load initial data
+        loadStats();
+        updateStatus();
+
+        // Auto-refresh every 10 seconds
+        setInterval(updateStatus, 10000);
+    });
+
+    // Load statistics
+    async function loadStats() {
+        try {
+            const response = await fetch('/api/stats');
+            const data = await response.json();
+
+            // Update views by date chart
+            if (data.views_by_date && data.views_by_date.length > 0) {
+                const reversed = data.views_by_date.reverse();
+                progressChart.data.labels = reversed.map(d => d.date);
+                progressChart.data.datasets[0].data = reversed.map(d => d.count);
+                progressChart.update();
+            }
+
+            // Update countries chart
+            if (data.top_countries && data.top_countries.length > 0) {
+                countriesChart.data.labels = data.top_countries.map(c => c.country);
+                countriesChart.data.datasets[0].data = data.top_countries.map(c => c.count);
+                countriesChart.update();
+            }
+
+            // Update average metrics
+            if (data.avg_metrics) {
+                document.getElementById('avg-startup').textContent =
+                    data.avg_metrics.startup_time ? data.avg_metrics.startup_time + 's' : '--';
+                document.getElementById('avg-smoothness').textContent =
+                    data.avg_metrics.smoothness_score ?? '--';
+                document.getElementById('avg-quality').textContent =
+                    data.avg_metrics.quality_score ?? '--';
+            }
+        } catch (error) {
+            console.error('Failed to load stats:', error);
+        }
+    }
+
+    // Update status
+    async function updateStatus() {
+        try {
+            const response = await fetch('/extraction/status');
+            const data = await response.json();
+
+            // Update running indicator
+            const indicator = document.getElementById('running-indicator');
+            if (data.is_running) {
+                indicator.innerHTML = '<span class="badge bg-success pulse">Running</span>';
+            } else {
+                indicator.innerHTML = '<span class="badge bg-secondary">Idle</span>';
+            }
+
+            // Update stats
+            document.getElementById('stat-total').textContent = data.total_views;
+            document.getElementById('stat-success').textContent = data.status_counts.SUCCESS || 0;
+            document.getElementById('stat-failed').textContent = data.status_counts.FAILED || 0;
+            document.getElementById('stat-processing').textContent = data.status_counts.PROCESSING || 0;
+
+            // Update checkpoint
+            if (data.checkpoint) {
+                const date = new Date(data.checkpoint);
+                document.getElementById('checkpoint-date').textContent =
+                    date.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+            }
+        } catch (error) {
+            console.error('Failed to update status:', error);
+        }
+    }
+</script>
+{% endblock %}

@@ -1,15 +1,16 @@
 #!/bin/bash
 
 #===============================================================================
-# Mux Dashboard Crawler - Mac Setup Script
+# Mux Dashboard Crawler - Mac Setup Script (with Flask Web UI)
 #===============================================================================
 # This script will:
-# 1. Check/install prerequisites (Node.js, PostgreSQL)
+# 1. Check/install prerequisites (Node.js, PostgreSQL, Python)
 # 2. Clone the repository from GitHub
-# 3. Install dependencies
+# 3. Install Node.js and Python dependencies
 # 4. Set up the PostgreSQL database
 # 5. Configure environment variables
-# 6. Run the initial authentication
+# 6. Set up the Flask web application
+# 7. Create helper scripts
 #===============================================================================
 
 set -e  # Exit on error
@@ -37,6 +38,9 @@ DB_PORT="5432"
 MUX_ORG_ID="g4m6v6"
 MUX_ENV_ID="4l0u8v"
 MUX_USER_ID=""  # Optional: filter by user ID
+
+# Flask configuration
+FLASK_PORT=5000
 
 #===============================================================================
 # Helper Functions
@@ -110,6 +114,15 @@ else
     fi
 fi
 
+# Check for Python
+if ! check_command python3; then
+    echo "Installing Python..."
+    brew install python@3.11
+else
+    PYTHON_VERSION=$(python3 --version | cut -d' ' -f2 | cut -d'.' -f1,2)
+    print_success "Python $PYTHON_VERSION installed"
+fi
+
 # Check for PostgreSQL
 if ! check_command psql; then
     echo "Installing PostgreSQL..."
@@ -161,10 +174,10 @@ cd "$INSTALL_DIR/prova/mux-crawler"
 print_success "Repository cloned to $INSTALL_DIR"
 
 #===============================================================================
-# Install Dependencies
+# Install Node.js Dependencies
 #===============================================================================
 
-print_header "Installing Dependencies"
+print_header "Installing Node.js Dependencies"
 
 npm install
 
@@ -172,7 +185,25 @@ npm install
 echo "Installing Playwright browsers (this may take a few minutes)..."
 npx playwright install chromium
 
-print_success "Dependencies installed"
+print_success "Node.js dependencies installed"
+
+#===============================================================================
+# Install Python Dependencies
+#===============================================================================
+
+print_header "Installing Python Dependencies"
+
+# Create virtual environment
+python3 -m venv venv
+source venv/bin/activate
+
+# Upgrade pip
+pip install --upgrade pip
+
+# Install Flask app dependencies
+pip install -r webapp/requirements.txt
+
+print_success "Python dependencies installed"
 
 #===============================================================================
 # Database Setup
@@ -212,6 +243,10 @@ cat > .env << EOF
 # Mux Dashboard Crawler Configuration
 # Generated on $(date)
 
+# Flask Configuration
+FLASK_ENV=development
+SECRET_KEY=$(openssl rand -hex 32)
+
 # Manual Verification Timeout (5 minutes in milliseconds)
 MANUAL_VERIFICATION_WAIT=300000
 
@@ -247,10 +282,68 @@ echo "  File location: $INSTALL_DIR/prova/mux-crawler/.env"
 
 print_header "Creating Helper Scripts"
 
+# Create start-webapp script
+cat > start-webapp.sh << 'EOF'
+#!/bin/bash
+# Start the Mux Crawler Web Application
+
+cd "$(dirname "$0")"
+
+# Activate virtual environment
+source venv/bin/activate
+
+# Load environment variables
+set -a
+source .env
+set +a
+
+echo ""
+echo "=========================================="
+echo "  Mux Dashboard Crawler - Web UI"
+echo "=========================================="
+echo ""
+echo "Starting Flask application..."
+echo "Open your browser to: http://localhost:5000"
+echo ""
+echo "Press Ctrl+C to stop the server"
+echo ""
+
+# Run Flask
+cd webapp
+python app.py
+EOF
+chmod +x start-webapp.sh
+
+# Create start-webapp-production script
+cat > start-webapp-prod.sh << 'EOF'
+#!/bin/bash
+# Start the Mux Crawler Web Application (Production Mode)
+
+cd "$(dirname "$0")"
+
+# Activate virtual environment
+source venv/bin/activate
+
+# Load environment variables
+set -a
+source .env
+set +a
+
+echo ""
+echo "Starting Flask application with Gunicorn..."
+echo "Open your browser to: http://localhost:5000"
+echo ""
+
+# Run with Gunicorn
+cd webapp
+gunicorn -w 2 -b 0.0.0.0:5000 app:app
+EOF
+chmod +x start-webapp-prod.sh
+
 # Create run script
 cat > run.sh << 'EOF'
 #!/bin/bash
-# Run the Mux crawler extraction
+# Run the Mux crawler extraction (headless)
 
 cd "$(dirname "$0")"
 
@@ -263,18 +356,18 @@ EOF
 chmod +x run.sh
 
 # Create run-headed script (for debugging)
-cat > run-debug.sh << 'EOF'
+cat > run-headed.sh << 'EOF'
 #!/bin/bash
 # Run the Mux crawler with visible browser (for debugging)
 
 cd "$(dirname "$0")"
 
-echo "Starting Mux Dashboard extraction in debug mode..."
+echo "Starting Mux Dashboard extraction in headed mode..."
 echo ""
 
 npm run test:headed
 EOF
-chmod +x run-debug.sh
+chmod +x run-headed.sh
 
 # Create authenticate script
 cat > authenticate.sh << 'EOF'
@@ -337,6 +430,18 @@ SELECT * FROM backfill_checkpoint;
 EOF
 chmod +x db-status.sh
 
+# Create stop-webapp script
+cat > stop-webapp.sh << 'EOF'
+#!/bin/bash
+# Stop the Mux Crawler Web Application
+
+echo "Stopping Flask application..."
+pkill -f "python.*app.py" 2>/dev/null || true
+pkill -f "gunicorn.*app:app" 2>/dev/null || true
+echo "Done"
+EOF
+chmod +x stop-webapp.sh
+
 print_success "Helper scripts created"
 
 #===============================================================================
@@ -347,22 +452,39 @@ print_header "Installation Complete!"
 
 echo -e "Installation directory: ${GREEN}$INSTALL_DIR/prova/mux-crawler${NC}"
 echo ""
-echo "Next steps:"
+echo "=========================================="
+echo "  NEXT STEPS"
+echo "=========================================="
 echo ""
 echo -e "  1. ${YELLOW}Edit the .env file${NC} to update your database password:"
 echo "     nano $INSTALL_DIR/prova/mux-crawler/.env"
 echo ""
-echo -e "  2. ${YELLOW}Authenticate with Mux dashboard${NC}:"
+echo -e "  2. ${YELLOW}Start the Web UI${NC}:"
 echo "     cd $INSTALL_DIR/prova/mux-crawler"
+echo "     ./start-webapp.sh"
+echo ""
+echo "     Then open: http://localhost:5000"
+echo ""
+echo -e "  3. ${YELLOW}Authenticate with Mux${NC} (from Web UI or command line):"
 echo "     ./authenticate.sh"
 echo ""
-echo -e "  3. ${YELLOW}Run the extraction${NC}:"
-echo "     ./run.sh"
+echo "=========================================="
+echo "  AVAILABLE SCRIPTS"
+echo "=========================================="
 echo ""
-echo "Available scripts:"
-echo "  ./run.sh          - Run extraction (headless)"
-echo "  ./run-debug.sh    - Run with visible browser"
-echo "  ./authenticate.sh - Re-authenticate with Mux"
-echo "  ./db-status.sh    - Check extraction progress"
+echo "  Web Application:"
+echo "    ./start-webapp.sh      - Start web UI (development)"
+echo "    ./start-webapp-prod.sh - Start web UI (production)"
+echo "    ./stop-webapp.sh       - Stop web UI"
 echo ""
-echo -e "${GREEN}Setup complete! Happy crawling!${NC}"
+echo "  Extraction (Command Line):"
+echo "    ./run.sh               - Run extraction (headless)"
+echo "    ./run-headed.sh        - Run with visible browser"
+echo "    ./authenticate.sh      - Re-authenticate with Mux"
+echo ""
+echo "  Database:"
+echo "    ./db-status.sh         - Check extraction progress"
+echo ""
+echo -e "${GREEN}=========================================="
+echo "  Setup complete! Happy crawling!"
+echo -e "==========================================${NC}"

@@ -1,0 +1,204 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - Mux Crawler{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h1 class="h3 mb-0">Settings</h1>
+</div>
+
+<div class="row g-4">
+    <div class="col-md-8">
+        <!-- Current Configuration -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-gear me-2"></i>Current Configuration
+            </div>
+            <div class="card-body">
+                <p class="text-muted mb-4">
+                    Configuration is loaded from the <code>.env</code> file. To change settings, edit the file and restart the application.
+                </p>
+
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small">MUX_ORG_ID</label>
+                        <div class="form-control bg-light">{{ mux_org_id or 'Not set' }}</div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small">MUX_ENV_ID</label>
+                        <div class="form-control bg-light">{{ mux_env_id or 'Not set' }}</div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small">MUX_USER_ID</label>
+                        <div class="form-control bg-light">{{ mux_user_id or 'Not set (all users)' }}</div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label text-muted small">EXTRACTION_START_DATE</label>
+                        <div class="form-control bg-light">{{ extraction_start_date or 'Not set' }}</div>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label text-muted small">DATABASE_URL</label>
+                        <div class="form-control bg-light font-monospace" style="font-size: 0.85rem;">{{ database_url or 'Not set' }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Authentication -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-shield-lock me-2"></i>Authentication
+            </div>
+            <div class="card-body">
+                <p class="text-muted mb-4">
+                    Authentication is stored in <code>auth/auth.json</code>. If you're experiencing issues, clear the auth and re-authenticate.
+                </p>
+
+                <div class="d-flex align-items-center mb-4">
+                    <div id="auth-status" class="me-3">
+                        <span class="spinner-border spinner-border-sm" role="status"></span>
+                        Checking...
+                    </div>
+                    <button class="btn btn-outline-danger" onclick="clearAuth()">
+                        <i class="bi bi-trash me-1"></i> Clear Authentication
+                    </button>
+                </div>
+
+                <div class="alert alert-info mb-0">
+                    <i class="bi bi-info-circle me-2"></i>
+                    After clearing authentication, run extraction in <strong>headed mode</strong> to log in again.
+                </div>
+            </div>
+        </div>
+
+        <!-- Database -->
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-database me-2"></i>Database Management
+            </div>
+            <div class="card-body">
+                <p class="text-muted mb-4">
+                    Manage extraction progress and database state.
+                </p>
+
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                <h6>Reset Checkpoint</h6>
+                                <p class="small text-muted mb-3">
+                                    Clear the extraction checkpoint to restart from the beginning.
+                                </p>
+                                <button class="btn btn-warning btn-sm" onclick="resetCheckpoint()">
+                                    <i class="bi bi-arrow-counterclockwise me-1"></i> Reset Checkpoint
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card bg-light">
+                            <div class="card-body">
+                                <h6>Clear Failed Views</h6>
+                                <p class="small text-muted mb-3">
+                                    Remove failed view records to allow re-extraction.
+                                </p>
+                                <button class="btn btn-warning btn-sm" onclick="clearFailed()">
+                                    <i class="bi bi-x-circle me-1"></i> Clear Failed
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="col-md-4">
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-file-text me-2"></i>Configuration File
+            </div>
+            <div class="card-body">
+                <p class="small text-muted mb-3">
+                    Edit the <code>.env</code> file to change configuration:
+                </p>
+                <pre class="bg-dark text-light p-3 rounded" style="font-size: 0.8rem; overflow-x: auto;">
+# Mux Configuration
+MUX_ORG_ID=your_org_id
+MUX_ENV_ID=your_env_id
+MUX_USER_ID=optional_user_id
+
+# Database
+DATABASE_URL=postgres://...
+
+# Extraction
+EXTRACTION_START_DATE=2024-10-01</pre>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-question-circle me-2"></i>Help
+            </div>
+            <div class="card-body">
+                <h6>Finding your Mux IDs</h6>
+                <p class="small text-muted">
+                    Your organization and environment IDs can be found in the Mux dashboard URL:
+                </p>
+                <code class="d-block bg-light p-2 rounded small mb-3">
+                    dashboard.mux.com/organizations/<strong>ORG_ID</strong>/environments/<strong>ENV_ID</strong>/views
+                </code>
+
+                <h6>Re-authenticating</h6>
+                <p class="small text-muted mb-0">
+                    1. Click "Clear Authentication" above<br>
+                    2. Go to Dashboard and click "Run Headed"<br>
+                    3. Log in to Mux in the browser window<br>
+                    4. Wait for redirect to complete
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    // Check auth status on load
+    document.addEventListener('DOMContentLoaded', checkAuthStatus);
+
+    async function checkAuthStatus() {
+        try {
+            const response = await fetch('/auth/status');
+            const data = await response.json();
+
+            const statusEl = document.getElementById('auth-status');
+
+            if (data.authenticated) {
+                statusEl.innerHTML = '<span class="badge bg-success"><i class="bi bi-check-circle me-1"></i>Authenticated</span>';
+            } else {
+                statusEl.innerHTML = '<span class="badge bg-danger"><i class="bi bi-x-circle me-1"></i>Not Authenticated</span>';
+            }
+        } catch (error) {
+            document.getElementById('auth-status').innerHTML = '<span class="badge bg-warning">Unknown</span>';
+        }
+    }
+
+    function resetCheckpoint() {
+        if (!confirm('This will reset the extraction checkpoint. The next extraction will start from the configured start date. Continue?')) {
+            return;
+        }
+
+        showToast('This feature requires direct database access. Run: psql -d mux_analytics -c "DELETE FROM backfill_checkpoint;"', 'info');
+    }
+
+    function clearFailed() {
+        if (!confirm('This will clear all failed view records, allowing them to be re-extracted. Continue?')) {
+            return;
+        }
+
+        showToast('This feature requires direct database access. Run: psql -d mux_analytics -c "DELETE FROM view_ingestion_status WHERE status = \'FAILED\';"', 'info');
+    }
+</script>
+{% endblock %}
