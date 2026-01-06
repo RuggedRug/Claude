@@ -1,0 +1,368 @@
+#!/bin/bash
+
+#===============================================================================
+# Mux Dashboard Crawler - Mac Setup Script
+#===============================================================================
+# This script will:
+# 1. Check/install prerequisites (Node.js, PostgreSQL)
+# 2. Clone the repository from GitHub
+# 3. Install dependencies
+# 4. Set up the PostgreSQL database
+# 5. Configure environment variables
+# 6. Run the initial authentication
+#===============================================================================
+
+set -e  # Exit on error
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Configuration - UPDATE THESE VALUES
+GITHUB_REPO="RuggedRug/Claude"
+BRANCH="claude/setup-playwright-scripts-Q9Wer"
+INSTALL_DIR="$HOME/mux-crawler"
+
+# Database configuration
+DB_NAME="mux_analytics"
+DB_USER="postgres"
+DB_PASSWORD="your_password_here"  # CHANGE THIS!
+DB_HOST="localhost"
+DB_PORT="5432"
+
+# Mux configuration - UPDATE THESE VALUES
+MUX_ORG_ID="g4m6v6"
+MUX_ENV_ID="4l0u8v"
+MUX_USER_ID=""  # Optional: filter by user ID
+
+#===============================================================================
+# Helper Functions
+#===============================================================================
+
+print_header() {
+    echo ""
+    echo -e "${BLUE}========================================${NC}"
+    echo -e "${BLUE}  $1${NC}"
+    echo -e "${BLUE}========================================${NC}"
+    echo ""
+}
+
+print_success() {
+    echo -e "${GREEN}✓ $1${NC}"
+}
+
+print_warning() {
+    echo -e "${YELLOW}⚠ $1${NC}"
+}
+
+print_error() {
+    echo -e "${RED}✗ $1${NC}"
+}
+
+check_command() {
+    if command -v "$1" &> /dev/null; then
+        print_success "$1 is installed"
+        return 0
+    else
+        print_warning "$1 is not installed"
+        return 1
+    fi
+}
+
+#===============================================================================
+# Prerequisites Check
+#===============================================================================
+
+print_header "Checking Prerequisites"
+
+# Check for Homebrew
+if ! check_command brew; then
+    echo "Installing Homebrew..."
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+    # Add Homebrew to PATH for Apple Silicon Macs
+    if [[ $(uname -m) == "arm64" ]]; then
+        echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zprofile
+        eval "$(/opt/homebrew/bin/brew shellenv)"
+    fi
+fi
+
+# Check for Git
+if ! check_command git; then
+    echo "Installing Git..."
+    brew install git
+fi
+
+# Check for Node.js
+if ! check_command node; then
+    echo "Installing Node.js..."
+    brew install node@20
+    brew link node@20
+else
+    NODE_VERSION=$(node -v | cut -d'v' -f2 | cut -d'.' -f1)
+    if [ "$NODE_VERSION" -lt 18 ]; then
+        print_warning "Node.js version is too old (requires 18+)"
+        echo "Upgrading Node.js..."
+        brew upgrade node || brew install node@20
+    fi
+fi
+
+# Check for PostgreSQL
+if ! check_command psql; then
+    echo "Installing PostgreSQL..."
+    brew install postgresql@16
+    brew services start postgresql@16
+
+    # Add PostgreSQL to PATH
+    echo 'export PATH="/opt/homebrew/opt/postgresql@16/bin:$PATH"' >> ~/.zshrc
+    export PATH="/opt/homebrew/opt/postgresql@16/bin:$PATH"
+
+    # Wait for PostgreSQL to start
+    sleep 3
+else
+    # Make sure PostgreSQL is running
+    if ! brew services list | grep -q "postgresql.*started"; then
+        echo "Starting PostgreSQL..."
+        brew services start postgresql@16 || brew services start postgresql
+    fi
+fi
+
+print_success "All prerequisites installed"
+
+#===============================================================================
+# Clone Repository
+#===============================================================================
+
+print_header "Cloning Repository"
+
+# Remove existing directory if it exists
+if [ -d "$INSTALL_DIR" ]; then
+    print_warning "Directory $INSTALL_DIR already exists"
+    read -p "Do you want to remove it and start fresh? (y/n) " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        rm -rf "$INSTALL_DIR"
+    else
+        print_error "Aborting installation"
+        exit 1
+    fi
+fi
+
+# Clone the repository
+echo "Cloning from GitHub..."
+git clone --branch "$BRANCH" --single-branch "https://github.com/$GITHUB_REPO.git" "$INSTALL_DIR"
+
+# Navigate to the mux-crawler directory
+cd "$INSTALL_DIR/prova/mux-crawler"
+
+print_success "Repository cloned to $INSTALL_DIR"
+
+#===============================================================================
+# Install Dependencies
+#===============================================================================
+
+print_header "Installing Dependencies"
+
+npm install
+
+# Install Playwright browsers
+echo "Installing Playwright browsers (this may take a few minutes)..."
+npx playwright install chromium
+
+print_success "Dependencies installed"
+
+#===============================================================================
+# Database Setup
+#===============================================================================
+
+print_header "Setting Up Database"
+
+# Check if database exists
+if psql -lqt | cut -d \| -f 1 | grep -qw "$DB_NAME"; then
+    print_warning "Database '$DB_NAME' already exists"
+    read -p "Do you want to drop and recreate it? (y/n) " -n 1 -r
+    echo
+    if [[ $REPLY =~ ^[Yy]$ ]]; then
+        dropdb "$DB_NAME" 2>/dev/null || true
+        createdb "$DB_NAME"
+        print_success "Database recreated"
+    fi
+else
+    createdb "$DB_NAME"
+    print_success "Database '$DB_NAME' created"
+fi
+
+# Apply schema
+echo "Applying database schema..."
+psql -d "$DB_NAME" -f schema.sql
+
+print_success "Database schema applied"
+
+#===============================================================================
+# Environment Configuration
+#===============================================================================
+
+print_header "Configuring Environment"
+
+# Create .env file
+cat > .env << EOF
+# Mux Dashboard Crawler Configuration
+# Generated on $(date)
+
+# Manual Verification Timeout (5 minutes in milliseconds)
+MANUAL_VERIFICATION_WAIT=300000
+
+# PostgreSQL Database Configuration
+DB_HOST=$DB_HOST
+DB_PORT=$DB_PORT
+DB_USER=$DB_USER
+DB_PASSWORD=$DB_PASSWORD
+DB_NAME=$DB_NAME
+
+# PostgreSQL connection string
+DATABASE_URL=postgres://$DB_USER:$DB_PASSWORD@$DB_HOST:$DB_PORT/$DB_NAME
+
+# Mux Dashboard Configuration
+MUX_ORG_ID=$MUX_ORG_ID
+MUX_ENV_ID=$MUX_ENV_ID
+MUX_USER_ID=$MUX_USER_ID
+
+# Extraction Configuration
+EXTRACTION_START_DATE=2024-10-01
+CONCURRENCY_LIMIT=3
+EOF
+
+print_success "Environment file created"
+
+# Remind user to update credentials
+print_warning "IMPORTANT: Edit .env file to update your database password!"
+echo "  File location: $INSTALL_DIR/prova/mux-crawler/.env"
+
+#===============================================================================
+# Create Helper Scripts
+#===============================================================================
+
+print_header "Creating Helper Scripts"
+
+# Create run script
+cat > run.sh << 'EOF'
+#!/bin/bash
+# Run the Mux crawler extraction
+
+cd "$(dirname "$0")"
+
+echo "Starting Mux Dashboard extraction..."
+echo "This will open a browser for authentication on first run."
+echo ""
+
+npm run extract
+EOF
+chmod +x run.sh
+
+# Create run-headed script (for debugging)
+cat > run-debug.sh << 'EOF'
+#!/bin/bash
+# Run the Mux crawler with visible browser (for debugging)
+
+cd "$(dirname "$0")"
+
+echo "Starting Mux Dashboard extraction in debug mode..."
+echo ""
+
+npm run test:headed
+EOF
+chmod +x run-debug.sh
+
+# Create authenticate script
+cat > authenticate.sh << 'EOF'
+#!/bin/bash
+# Re-authenticate with Mux dashboard
+
+cd "$(dirname "$0")"
+
+# Remove existing session
+rm -f auth/auth.json
+
+echo "Launching browser for authentication..."
+echo "Please log in to Mux dashboard and complete MFA."
+echo ""
+
+npm run test:headed
+EOF
+chmod +x authenticate.sh
+
+# Create database status script
+cat > db-status.sh << 'EOF'
+#!/bin/bash
+# Check database status and extraction progress
+
+cd "$(dirname "$0")"
+
+# Load environment variables
+source .env 2>/dev/null
+
+echo "Database: $DB_NAME"
+echo ""
+
+echo "=== Extraction Progress ==="
+psql -d "$DB_NAME" -c "
+SELECT
+    status,
+    COUNT(*) as count
+FROM view_ingestion_status
+GROUP BY status
+ORDER BY status;
+"
+
+echo ""
+echo "=== Recent Activity ==="
+psql -d "$DB_NAME" -c "
+SELECT
+    view_id,
+    status,
+    updated_at
+FROM view_ingestion_status
+ORDER BY updated_at DESC
+LIMIT 10;
+"
+
+echo ""
+echo "=== Checkpoint ==="
+psql -d "$DB_NAME" -c "
+SELECT * FROM backfill_checkpoint;
+"
+EOF
+chmod +x db-status.sh
+
+print_success "Helper scripts created"
+
+#===============================================================================
+# Summary
+#===============================================================================
+
+print_header "Installation Complete!"
+
+echo -e "Installation directory: ${GREEN}$INSTALL_DIR/prova/mux-crawler${NC}"
+echo ""
+echo "Next steps:"
+echo ""
+echo -e "  1. ${YELLOW}Edit the .env file${NC} to update your database password:"
+echo "     nano $INSTALL_DIR/prova/mux-crawler/.env"
+echo ""
+echo -e "  2. ${YELLOW}Authenticate with Mux dashboard${NC}:"
+echo "     cd $INSTALL_DIR/prova/mux-crawler"
+echo "     ./authenticate.sh"
+echo ""
+echo -e "  3. ${YELLOW}Run the extraction${NC}:"
+echo "     ./run.sh"
+echo ""
+echo "Available scripts:"
+echo "  ./run.sh          - Run extraction (headless)"
+echo "  ./run-debug.sh    - Run with visible browser"
+echo "  ./authenticate.sh - Re-authenticate with Mux"
+echo "  ./db-status.sh    - Check extraction progress"
+echo ""
+echo -e "${GREEN}Setup complete! Happy crawling!${NC}"
