@@ -65,11 +65,14 @@ This allows Claude Desktop to run commands directly on your Mac Mini.
 
 ```bash
 # Install globally
-npm install -g @anthropic-ai/mcp-server-shell
+npm install -g @mako10k/mcp-shell-server
 
 # Verify installation
-which mcp-server-shell || npx -y @anthropic-ai/mcp-server-shell --version
+npx -y @mako10k/mcp-shell-server --help
 ```
+
+> **Note:** We use [@mako10k/mcp-shell-server](https://www.npmjs.com/package/@mako10k/mcp-shell-server),
+> a secure MCP server for shell operations and terminal management.
 
 ### Step 2: Configure Claude Desktop
 
@@ -85,7 +88,7 @@ cat > ~/Library/Application\ Support/Claude/claude_desktop_config.json << 'EOF'
   "mcpServers": {
     "mac-mini": {
       "command": "npx",
-      "args": ["-y", "@anthropic-ai/mcp-server-shell"],
+      "args": ["-y", "@mako10k/mcp-shell-server"],
       "cwd": "/Users/roger/Documents/Developments2/w_mux_crawler/Github/prova/mux-crawler",
       "env": {
         "PATH": "/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
@@ -119,7 +122,7 @@ cat ~/Library/Application\ Support/Claude/claude_desktop_config.json | python3 -
 
 # Test MCP server manually
 cd /Users/roger/Documents/Developments2/w_mux_crawler/Github/prova/mux-crawler
-npx -y @anthropic-ai/mcp-server-shell
+npx -y @mako10k/mcp-shell-server
 
 # Find npx path if needed
 which npx
@@ -316,7 +319,7 @@ Now you can use:
 cat ~/Library/Application\ Support/Claude/claude_desktop_config.json | python3 -m json.tool
 
 # 2. Test MCP server manually
-npx -y @anthropic-ai/mcp-server-shell
+npx -y @mako10k/mcp-shell-server
 
 # 3. Check Claude Desktop logs
 # Menu: Help → Show Logs
@@ -383,7 +386,7 @@ cd prova/mux-crawler
 ### One-Time Setup
 
 - [ ] **Repository cloned** to `/Users/roger/Documents/Developments2/w_mux_crawler/Github`
-- [ ] **MCP server installed**: `npm install -g @anthropic-ai/mcp-server-shell`
+- [ ] **MCP server installed**: `npm install -g @mako10k/mcp-shell-server`
 - [ ] **Claude Desktop configured**: config file at `~/Library/Application Support/Claude/claude_desktop_config.json`
 - [ ] **Claude Desktop restarted** after config change
 - [ ] **MCP verified**: Ask Claude to run a command via MCP
